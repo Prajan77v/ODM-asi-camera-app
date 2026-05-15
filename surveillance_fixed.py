@@ -1,6 +1,7 @@
 # =====================================================
-# AI SMART SURVEILLANCE SYSTEM — FINAL
-# Stable Face IDs | Persistent DB | Structured Logs
+# AI SMART SURVEILLANCE SYSTEM — STABLE VERSION
+# YOLO Track ID → Face PID binding | Grace buffer
+# No more flickering LEFT/RETURNED
 # =====================================================
 
 from ultralytics import YOLO
@@ -41,7 +42,7 @@ AFTER_IMG      = "logs/after.jpg"
 # TELEGRAM SETTINGS
 # =====================================================
 
-BOT_TOKEN = "Bot_Tokem"
+BOT_TOKEN = "8938780809:AAHzpgv_fbfbmXJ9x_ui44LY83CWnTWfKPo"
 CHAT_ID   = "8076971661"
 
 # =====================================================
@@ -54,11 +55,23 @@ FRAME_HEIGHT       = 540
 DETECTION_WIDTH    = 640
 DETECTION_HEIGHT   = 360
 CONFIDENCE         = 0.55
-PROCESS_EVERY_N   = 4
-CONFIRMATION_TIME  = 1.5
-FACE_MATCH_THRESH  = 0.50   # lower = stricter match (0.0–1.0)
-FACE_ABSENT_SECS   = 4.0    # seconds before "left" is confirmed
+PROCESS_EVERY_N   = 4          # run YOLO every N frames
+
+# ── Face recognition ──────────────────────────────
+FACE_MATCH_THRESH  = 0.52      # lower = stricter (good range 0.45–0.55)
 KNOWN_FACES_DIR    = "faces/known"
+
+# ── Departure detection ───────────────────────────
+# A person is only declared LEFT after being absent
+# for this many CONSECUTIVE detection cycles.
+# At PROCESS_EVERY_N=4 and 30fps → 1 cycle ≈ 0.13s
+# 40 cycles ≈ 5 seconds grace before firing LEFT
+ABSENT_CYCLES_THRESHOLD = 40
+
+# ── Face re-identification ────────────────────────
+# How many cycles to wait before trying face-recog
+# again on an already-bound track (saves CPU)
+FACE_RECHECK_CYCLES = 30
 
 # =====================================================
 # COLORS  (BGR)
@@ -72,121 +85,123 @@ WHITE  = (255, 255, 255)
 RED    = (0,     0, 255)
 BLUE   = (255, 120,  0)
 ORANGE = (0,   165, 255)
-PURPLE = (200,  50, 200)
+
+_COLOR_POOL = [
+    (0, 255, 200), (255, 200, 0), (200, 0, 255),
+    (0, 200, 255), (255, 80,  0), (80, 255, 0),
+    (0, 80,  255), (255, 0,  150),(0, 255, 80),
+    (150, 0, 255), (255, 150, 0), (0, 150, 255),
+]
+_pid_color_map = {}
+
+def pid_color(pid):
+    if pid not in _pid_color_map:
+        _pid_color_map[pid] = _COLOR_POOL[len(_pid_color_map) % len(_COLOR_POOL)]
+    return _pid_color_map[pid]
 
 # =====================================================
 # FACES DATABASE
-# Stores: { "P1": { "name": "Alice", "encoding": [...],
-#           "first_seen": "...", "last_seen": "...",
-#           "visit_count": 1, "known": true/false } }
 # =====================================================
 
 def load_faces_db():
     if os.path.exists(FACES_DB_FILE):
         with open(FACES_DB_FILE, "r") as f:
             db = json.load(f)
-        # Restore encodings as numpy arrays
         for pid, data in db.items():
             data["encoding"] = np.array(data["encoding"])
         return db
     return {}
 
 def save_faces_db(db):
-    serializable = {}
+    out = {}
     for pid, data in db.items():
-        serializable[pid] = {
+        out[pid] = {
             k: (v.tolist() if isinstance(v, np.ndarray) else v)
             for k, v in data.items()
         }
     with open(FACES_DB_FILE, "w") as f:
-        json.dump(serializable, f, indent=2)
+        json.dump(out, f, indent=2)
 
-faces_db = load_faces_db()   # pid -> data dict
-next_pid_number = 1
+faces_db = load_faces_db()
+_next_pid_n = 1
 for pid in faces_db:
     try:
         n = int(pid[1:])
-        if n >= next_pid_number:
-            next_pid_number = n + 1
+        if n >= _next_pid_n:
+            _next_pid_n = n + 1
     except:
         pass
 
 def get_next_pid():
-    global next_pid_number
-    pid = f"P{next_pid_number}"
-    next_pid_number += 1
+    global _next_pid_n
+    pid = f"P{_next_pid_n}"
+    _next_pid_n += 1
     return pid
 
 # =====================================================
-# PRELOAD KNOWN FACES INTO DB
-# Files in faces/known/ named like "Alice.jpg"
-# These always get a stable known=True entry
+# PRELOAD KNOWN FACES
 # =====================================================
 
 def preload_known_faces():
-    global faces_db
-    known_names_in_db = {
+    known_by_name = {
         data["name"]: pid
         for pid, data in faces_db.items()
         if data.get("known", False)
     }
+    loaded = []
     for file in os.listdir(KNOWN_FACES_DIR):
         if not file.lower().endswith((".jpg", ".png", ".jpeg")):
             continue
-        name = os.path.splitext(file)[0]
-        image = face_recognition.load_image_file(
-            os.path.join(KNOWN_FACES_DIR, file)
-        )
-        encodings = face_recognition.face_encodings(image)
-        if not encodings:
+        name  = os.path.splitext(file)[0]
+        path  = os.path.join(KNOWN_FACES_DIR, file)
+        image = face_recognition.load_image_file(path)
+        encs  = face_recognition.face_encodings(image)
+        if not encs:
+            print(f"  WARNING: no face found in {file}")
             continue
-        if name in known_names_in_db:
-            # Update encoding in case photo changed
-            pid = known_names_in_db[name]
-            faces_db[pid]["encoding"] = encodings[0]
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if name in known_by_name:
+            pid = known_by_name[name]
+            faces_db[pid]["encoding"] = encs[0]   # refresh encoding
         else:
             pid = get_next_pid()
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             faces_db[pid] = {
                 "name":        name,
-                "encoding":    encodings[0],
+                "encoding":    encs[0],
                 "first_seen":  now,
                 "last_seen":   now,
                 "visit_count": 0,
                 "known":       True,
-                "photo":       os.path.join(KNOWN_FACES_DIR, file),
+                "photo":       path,
             }
+        loaded.append(name)
     save_faces_db(faces_db)
-    print(f"Known faces loaded: {[d['name'] for d in faces_db.values() if d.get('known')]}")
+    print(f"Known faces loaded: {loaded}")
 
 preload_known_faces()
 
 # =====================================================
 # FACE MATCHING
-# Returns (pid, name, is_new) for a given encoding
 # =====================================================
 
 def match_face(encoding):
-    """Compare encoding against all DB entries.
-    Returns (pid, name, is_new_person)."""
+    """Returns (pid, name, is_new)."""
     if not faces_db:
-        return _register_new_face(encoding)
+        return _register_face(encoding)
 
-    all_encodings = [data["encoding"] for data in faces_db.values()]
-    all_pids      = list(faces_db.keys())
+    all_encs  = [d["encoding"] for d in faces_db.values()]
+    all_pids  = list(faces_db.keys())
+    distances = face_recognition.face_distance(all_encs, encoding)
+    best_i    = int(np.argmin(distances))
+    best_d    = distances[best_i]
 
-    distances = face_recognition.face_distance(all_encodings, encoding)
-    best_idx  = int(np.argmin(distances))
-    best_dist = distances[best_idx]
-
-    if best_dist <= FACE_MATCH_THRESH:
-        pid  = all_pids[best_idx]
+    if best_d <= FACE_MATCH_THRESH:
+        pid  = all_pids[best_i]
         name = faces_db[pid]["name"]
         return pid, name, False
-    else:
-        return _register_new_face(encoding)
+    return _register_face(encoding)
 
-def _register_new_face(encoding):
+def _register_face(encoding):
     pid  = get_next_pid()
     name = f"Intruder-{pid}"
     now  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -195,7 +210,7 @@ def _register_new_face(encoding):
         "encoding":    encoding,
         "first_seen":  now,
         "last_seen":   now,
-        "visit_count": 1,
+        "visit_count": 0,
         "known":       False,
         "photo":       None,
     }
@@ -203,60 +218,50 @@ def _register_new_face(encoding):
     return pid, name, True
 
 # =====================================================
-# STRUCTURED LOG  (table format)
-# Columns: Timestamp | Event | Object-ID | Name | Detail
+# STRUCTURED LOG
 # =====================================================
 
-COL_W = [21, 16, 10, 20, 30]   # column widths
+COL_W = [21, 16, 10, 22, 32]
 
-def _table_row(*cols):
+def _row(*cols):
     parts = []
-    for i, col in enumerate(cols):
-        w   = COL_W[i] if i < len(COL_W) else 30
-        txt = str(col)[:w]
-        parts.append(txt.ljust(w))
+    for i, c in enumerate(cols):
+        w = COL_W[i] if i < len(COL_W) else 32
+        parts.append(str(c)[:w].ljust(w))
     return "| " + " | ".join(parts) + " |"
 
-def _table_divider():
-    segs = ["-" * w for w in COL_W]
-    return "+-" + "-+-".join(segs) + "-+"
-
-TABLE_HEADER = (
-    _table_divider() + "\n" +
-    _table_row("TIMESTAMP", "EVENT", "OBJECT ID", "NAME", "DETAIL") + "\n" +
-    _table_divider()
-)
+def _div():
+    return "+-" + "-+-".join("-" * w for w in COL_W) + "-+"
 
 def init_event_log():
     if not os.path.exists(EVENT_LOG_FILE):
         with open(EVENT_LOG_FILE, "w", encoding="utf-8") as f:
-            f.write("=" * 108 + "\n")
-            f.write(" AI SMART SURVEILLANCE SYSTEM — EVENT LOG".center(108) + "\n")
-            f.write(f" Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}".center(108) + "\n")
-            f.write("=" * 108 + "\n\n")
-            f.write(TABLE_HEADER + "\n")
+            f.write("=" * 114 + "\n")
+            f.write(" AI SMART SURVEILLANCE SYSTEM — EVENT LOG".center(114) + "\n")
+            f.write(f" Started : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}".center(114) + "\n")
+            f.write("=" * 114 + "\n\n")
+            f.write(_div() + "\n")
+            f.write(_row("TIMESTAMP", "EVENT", "OBJECT ID", "NAME", "DETAIL") + "\n")
+            f.write(_div() + "\n")
 
 init_event_log()
+history_log = []
 
 def log_event(event_type, obj_id="—", name="—", detail=""):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row       = _table_row(timestamp, event_type, obj_id, name, detail)
-
-    # Append to table log
+    ts  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row = _row(ts, event_type, obj_id, name, detail)
     try:
         with open(EVENT_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(row + "\n")
     except Exception as e:
         print("LOG ERROR:", e)
 
-    # Also append to simple log
-    full = f"[{timestamp}] {event_type:<16} | {obj_id:<10} | {name:<20} | {detail}"
-    history_log.append(full)
-    print(full)
-
+    short = f"[{ts}] {event_type:<14} | {obj_id:<6} | {name:<18} | {detail}"
+    history_log.append(short)
+    print(short)
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(full + "\n")
+            f.write(short + "\n")
     except:
         pass
 
@@ -264,29 +269,31 @@ def log_event(event_type, obj_id="—", name="—", detail=""):
 # TELEGRAM
 # =====================================================
 
-def send_telegram(message):
+def _send_msg(text):
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": message}, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": text}, timeout=5)
     except Exception as e:
-        print("TELEGRAM ERROR:", e)
+        print("TELEGRAM:", e)
 
-def send_photo_telegram(path, caption=""):
+def _send_photo(path, caption):
     if not os.path.exists(path):
         return
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
         with open(path, "rb") as p:
-            requests.post(url, files={"photo": p},
-                          data={"chat_id": CHAT_ID, "caption": caption}, timeout=10)
+            requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                files={"photo": p},
+                data={"chat_id": CHAT_ID, "caption": caption}, timeout=10)
     except Exception as e:
-        print("PHOTO ERROR:", e)
+        print("PHOTO:", e)
 
 def async_alert(msg):
-    threading.Thread(target=send_telegram, args=(msg,), daemon=True).start()
+    threading.Thread(target=_send_msg,   args=(msg,),       daemon=True).start()
 
-def async_photo(path, caption):
-    threading.Thread(target=send_photo_telegram, args=(path, caption), daemon=True).start()
+def async_photo(path, cap):
+    threading.Thread(target=_send_photo, args=(path, cap),  daemon=True).start()
 
 def play_alarm():
     try:
@@ -296,190 +303,163 @@ def play_alarm():
         pass
 
 # =====================================================
-# LOAD MODEL
+# LOAD MODEL + CAMERA
 # =====================================================
 
 print("Loading YOLO...")
 model = YOLO(MODEL_NAME)
-print("YOLO Loaded")
-
-# =====================================================
-# CAMERA
-# =====================================================
+print("YOLO loaded.")
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH,  FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
-
 if not cap.isOpened():
-    print("Cannot open camera")
-    exit()
+    print("Cannot open camera"); exit()
 
 # =====================================================
-# STATE VARIABLES
+# TRACKING STATE
 # =====================================================
 
-frame_count      = 0
+frame_count       = 0
 latest_detections = []
-object_counts    = Counter()
-history_log      = []
+object_counts     = Counter()
 
-show_left_panel  = True
-show_right_panel = True
-show_footer      = True
-show_boxes       = True
+show_left_panel   = True
+show_right_panel  = True
+show_footer       = True
+show_boxes        = True
 
-startup_time     = time.time()
-baseline_saved   = False
+startup_time      = time.time()
+baseline_saved    = False
+last_seen_counter = Counter()
+confirmed_counts  = Counter()
+obj_missing_since = {}
+obj_added_since   = {}
+active_warning    = ""
+warning_time      = 0.0
+_last_db_save     = time.time()
 
-# Object (non-person) tracking
-last_seen_counter   = Counter()
-confirmed_counts    = Counter()
-object_missing_since = {}
-object_added_since   = {}
+# ── Person tracking ───────────────────────────────
+#
+# track_to_pid  : { yolo_track_id (int) -> pid (str) }
+#   Once a YOLO track ID is bound to a pid, we reuse
+#   that binding every frame — no re-running face-recog
+#   unless the track is new or we schedule a recheck.
+#
+# pid_info      : { pid -> { name, absent_cycles,
+#                            present, last_box,
+#                            face_check_countdown } }
+#
+# present_pids  : set of pids currently in frame
 
-active_warning = ""
-warning_time   = 0
+track_to_pid          = {}   # yolo_track_id -> pid
+pid_info              = {}   # pid -> info dict
+present_pids          = set()
 
-# ─── Person tracking ──────────────────────────────
-# currently_present: { pid -> { name, last_seen_time, box } }
-currently_present = {}
-
-# pid -> time when they were LAST seen in frame
-# used to confirm departure after FACE_ABSENT_SECS
-person_last_seen   = {}   # pid -> timestamp
-
-# pid -> stable display color (BGR)
-_pid_colors = {}
-_color_pool = [
-    (0, 255, 200), (255, 200, 0), (200, 0, 255),
-    (0, 200, 255), (255, 100, 0), (100, 255, 0),
-    (0, 100, 255), (255, 0, 150), (0, 255, 100),
-]
-
-def pid_color(pid):
-    if pid not in _pid_colors:
-        idx = len(_pid_colors) % len(_color_pool)
-        _pid_colors[pid] = _color_pool[idx]
-    return _pid_colors[pid]
+def _ensure_pid_info(pid, name):
+    if pid not in pid_info:
+        pid_info[pid] = {
+            "name":                name,
+            "absent_cycles":       0,
+            "present":             False,
+            "last_box":            None,
+            "face_check_countdown": 0,
+        }
+    else:
+        pid_info[pid]["name"] = name   # keep name updated
 
 # =====================================================
-# HELPERS
+# HELPER UTILS
 # =====================================================
-
-def transparent_rect(img, x1, y1, x2, y2, color, alpha=0.6):
-    overlay = img.copy()
-    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
-    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
 
 def clamp(v, lo, hi):
     return max(lo, min(v, hi))
 
+def transparent_rect(img, x1, y1, x2, y2, color, alpha=0.6):
+    ov = img.copy()
+    cv2.rectangle(ov, (x1, y1), (x2, y2), color, -1)
+    cv2.addWeighted(ov, alpha, img, 1 - alpha, 0, img)
+
+def draw_label(img, text, x1, y1, color):
+    tw = len(text) * 10 + 12
+    cv2.rectangle(img, (x1, y1 - 30), (x1 + tw, y1), color, -1)
+    cv2.putText(img, text, (x1 + 6, y1 - 8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, BLACK, 2)
+
 # =====================================================
-# FACE PROCESSING FOR ONE PERSON BOX
-# Returns (pid, display_name)
+# FACE RECOGNITION FOR ONE PERSON BOX
 # =====================================================
 
-def process_person_face(frame, x1, y1, x2, y2):
-    """Crop the person box, run face recognition, return stable pid+name."""
-    face_crop = frame[y1:y2, x1:x2]
-    if face_crop.size == 0:
+def try_recognize_face(frame, x1, y1, x2, y2):
+    """Return (pid, name) or (None, None) if no face found."""
+    crop = frame[y1:y2, x1:x2]
+    if crop.size == 0:
         return None, None
-
     try:
-        rgb       = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-        locations = face_recognition.face_locations(rgb, model="hog")
-        if not locations:
+        rgb  = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        locs = face_recognition.face_locations(rgb, model="hog")
+        if not locs:
             return None, None
-
-        encodings = face_recognition.face_encodings(rgb, locations)
-        if not encodings:
+        encs = face_recognition.face_encodings(rgb, locs)
+        if not encs:
             return None, None
-
-        pid, name, is_new = match_face(encodings[0])
+        pid, name, is_new = match_face(encs[0])
         return pid, name
-
     except Exception as e:
         print("FACE ERROR:", e)
         return None, None
 
 # =====================================================
-# HANDLE PERSON ENTER / RETURN / UPDATE
+# PERSON ENTER / RETURN HANDLER
 # =====================================================
 
-def handle_person_seen(pid, name, frame, x1, y1, x2, y2):
-    """Called every detection frame a pid is visible."""
-    now     = time.time()
+def on_person_arrived(pid, name, frame, x1, y1, x2, y2):
+    now     = datetime.now()
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    db      = faces_db[pid]
+    db["last_seen"]   = now_str
+    db["visit_count"] = db.get("visit_count", 0) + 1
+
+    visit_n = db["visit_count"]
+    is_new  = visit_n == 1
+
+    event = "ENTERED" if is_new else "RETURNED"
+    emoji = "🟢" if is_new else "🔄"
+    word  = "NEW PERSON DETECTED" if is_new else "PERSON RETURNED"
+
+    log_event(event, pid, name, f"Visit #{visit_n}")
+    async_alert(
+        f"{emoji} {word}\n\n"
+        f"ID   : {pid}\n"
+        f"Name : {name}\n"
+        f"Visit: #{visit_n}\n"
+        f"Time : {now_str}"
+    )
+
+    # Save face capture
+    crop = frame[y1:y2, x1:x2]
+    if crop.size > 0:
+        cap_path = f"faces/captured/{pid}_{int(time.time())}.jpg"
+        cv2.imwrite(cap_path, crop)
+        if not db.get("known") and db.get("photo") is None:
+            db["photo"] = cap_path
+
+    save_faces_db(faces_db)
+
+def on_person_left(pid, frame):
+    name    = pid_info[pid]["name"]
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    person_last_seen[pid] = now
-
-    # Update DB
-    faces_db[pid]["last_seen"]   = now_str
-    faces_db[pid]["visit_count"] = faces_db[pid].get("visit_count", 0) + 1
-    # Don't save every frame — save periodically (handled after loop)
-
-    if pid not in currently_present:
-        # New arrival or return
-        was_seen_before = faces_db[pid].get("visit_count", 0) > 1
-        currently_present[pid] = {"name": name, "box": (x1, y1, x2, y2)}
-
-        if was_seen_before:
-            event = "RETURNED"
-            msg   = (f"🔄 PERSON RETURNED\n\n"
-                     f"ID:    {pid}\n"
-                     f"Name:  {name}\n"
-                     f"Time:  {now_str}")
-        else:
-            event = "ENTERED"
-            msg   = (f"🟢 NEW PERSON DETECTED\n\n"
-                     f"ID:    {pid}\n"
-                     f"Name:  {name}\n"
-                     f"Time:  {now_str}")
-
-        log_event(event, pid, name,
-                  f"Visit #{faces_db[pid]['visit_count']}")
-        async_alert(msg)
-
-        # Save face capture
-        cap_path = f"faces/captured/{pid}_{int(now)}.jpg"
-        cv2.imwrite(cap_path, frame[y1:y2, x1:x2])
-        if not faces_db[pid].get("known"):
-            faces_db[pid]["photo"] = cap_path
-
-        save_faces_db(faces_db)
-
-    else:
-        # Just update box position
-        currently_present[pid]["box"] = (x1, y1, x2, y2)
-
-# =====================================================
-# HANDLE PERSON DEPARTURE (called in main loop)
-# =====================================================
-
-def check_departures(frame):
-    now = time.time()
-    departed = []
-
-    for pid in list(currently_present.keys()):
-        last = person_last_seen.get(pid, 0)
-        if now - last > FACE_ABSENT_SECS:
-            departed.append(pid)
-
-    for pid in departed:
-        data = currently_present.pop(pid)
-        name = data["name"]
-        cv2.imwrite(AFTER_IMG, frame)
-        log_event("LEFT", pid, name,
-                  f"Last seen {datetime.now().strftime('%H:%M:%S')}")
-        async_alert(
-            f"⚠️ PERSON LEFT\n\n"
-            f"ID:    {pid}\n"
-            f"Name:  {name}\n"
-            f"Time:  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        threading.Thread(target=play_alarm, daemon=True).start()
+    cv2.imwrite(AFTER_IMG, frame)
+    log_event("LEFT", pid, name, f"Last seen {now_str}")
+    async_alert(
+        f"⚠️ PERSON LEFT\n\n"
+        f"ID   : {pid}\n"
+        f"Name : {name}\n"
+        f"Time : {now_str}"
+    )
+    threading.Thread(target=play_alarm, daemon=True).start()
 
 # =====================================================
 # WINDOW
@@ -490,13 +470,11 @@ cv2.setWindowProperty("AI SURVEILLANCE",
                       cv2.WND_PROP_FULLSCREEN,
                       cv2.WINDOW_FULLSCREEN)
 
-log_event("SYSTEM START", "—", "—", "Surveillance system initialized")
+log_event("SYSTEM START", "—", "—", "Surveillance initialized")
 
 # =====================================================
 # MAIN LOOP
 # =====================================================
-
-_last_db_save = time.time()
 
 while True:
 
@@ -513,17 +491,17 @@ while True:
         save_faces_db(faces_db)
         _last_db_save = time.time()
 
-    # ── Baseline ──────────────────────────────────
+    # ── Baseline snapshot ─────────────────────────
     if not baseline_saved and time.time() - startup_time > 5:
         cv2.imwrite(BEFORE_IMG, frame)
         baseline_saved = True
         confirmed_counts = last_seen_counter.copy()
-        async_alert("✅ SURVEILLANCE ACTIVE\nBaseline saved. Monitoring started.")
-        log_event("BASELINE", "—", "—", "Baseline snapshot saved")
+        async_alert("✅ SURVEILLANCE ACTIVE\nBaseline saved.")
+        log_event("BASELINE", "—", "—", "Snapshot saved")
 
-    # ─────────────────────────────────────────────
-    # YOLO DETECTION
-    # ─────────────────────────────────────────────
+    # =================================================
+    # YOLO DETECTION CYCLE
+    # =================================================
 
     if frame_count % PROCESS_EVERY_N == 0:
 
@@ -532,12 +510,12 @@ while True:
                                persist=True, verbose=False)
         boxes   = results[0].boxes
 
-        latest_detections = []
-        current_objects   = []
-        pids_seen_this_frame = set()
-
         sx = FRAME_WIDTH  / DETECTION_WIDTH
         sy = FRAME_HEIGHT / DETECTION_HEIGHT
+
+        latest_detections  = []
+        current_objects    = []
+        track_ids_seen     = set()   # yolo track IDs visible this cycle
 
         for box in boxes:
             conf = float(box.conf[0])
@@ -558,12 +536,67 @@ while True:
             pid       = None
             disp_name = label
 
+            # ──────────────────────────────────────
+            # PERSON: bind YOLO track ID → face pid
+            # ──────────────────────────────────────
             if label == "person":
-                pid, name = process_person_face(frame, x1, y1, x2, y2)
-                if pid:
-                    pids_seen_this_frame.add(pid)
-                    handle_person_seen(pid, name, frame, x1, y1, x2, y2)
-                    disp_name = f"{pid} | {name}"
+
+                # Get YOLO's own track ID for this box
+                yolo_tid = None
+                if box.id is not None:
+                    try:
+                        yolo_tid = int(box.id[0])
+                    except:
+                        pass
+
+                if yolo_tid is not None:
+                    track_ids_seen.add(yolo_tid)
+
+                    if yolo_tid in track_to_pid:
+                        # ── Already bound: reuse existing pid ──
+                        pid  = track_to_pid[yolo_tid]
+                        name = pid_info[pid]["name"]
+
+                        # Periodically re-run face-recog to confirm
+                        info = pid_info[pid]
+                        info["face_check_countdown"] -= 1
+                        if info["face_check_countdown"] <= 0:
+                            np_pid, np_name = try_recognize_face(
+                                frame, x1, y1, x2, y2)
+                            info["face_check_countdown"] = FACE_RECHECK_CYCLES
+                            if np_pid and np_pid != pid:
+                                # face says different person — rebind
+                                track_to_pid[yolo_tid] = np_pid
+                                pid  = np_pid
+                                name = np_name
+                                _ensure_pid_info(pid, name)
+
+                    else:
+                        # ── New track: run face recognition now ──
+                        np_pid, np_name = try_recognize_face(
+                            frame, x1, y1, x2, y2)
+
+                        if np_pid:
+                            pid  = np_pid
+                            name = np_name
+                            track_to_pid[yolo_tid] = pid
+                            _ensure_pid_info(pid, name)
+                        # else: face not detected yet — leave unbound
+                        # (will retry next cycle since track_id not in map)
+
+                    if pid:
+                        info = pid_info[pid]
+                        info["last_box"]       = (x1, y1, x2, y2)
+                        info["absent_cycles"]  = 0   # reset absence counter
+
+                        if not info["present"]:
+                            # Person just arrived / returned
+                            info["present"] = True
+                            present_pids.add(pid)
+                            on_person_arrived(pid, info["name"],
+                                              frame, x1, y1, x2, y2)
+
+                        disp_name = f"{pid} | {info['name']}"
 
             latest_detections.append({
                 "label":     label,
@@ -577,220 +610,197 @@ while True:
         current_counter   = Counter(current_objects)
         last_seen_counter = current_counter.copy()
 
-        # ── Departure check ───────────────────────
-        check_departures(frame)
+        # ──────────────────────────────────────────
+        # DEPARTURE CHECK
+        # Increment absent_cycles for every pid whose
+        # YOLO track is no longer visible this cycle.
+        # Fire LEFT only after ABSENT_CYCLES_THRESHOLD.
+        # ──────────────────────────────────────────
 
-        # ── Non-person object tracking ─────────────
+        # Find which pids had their track disappear
+        pids_active_this_cycle = set()
+        for tid in track_ids_seen:
+            if tid in track_to_pid:
+                pids_active_this_cycle.add(track_to_pid[tid])
+
+        for pid in list(present_pids):
+            if pid not in pids_active_this_cycle:
+                pid_info[pid]["absent_cycles"] += 1
+                if pid_info[pid]["absent_cycles"] >= ABSENT_CYCLES_THRESHOLD:
+                    # Confirmed departure
+                    present_pids.discard(pid)
+                    pid_info[pid]["present"]       = False
+                    pid_info[pid]["absent_cycles"] = 0
+                    # Clean up stale track binding so a fresh
+                    # detection later can rebind correctly
+                    stale_tids = [t for t, p in track_to_pid.items()
+                                  if p == pid]
+                    for t in stale_tids:
+                        del track_to_pid[t]
+                    on_person_left(pid, frame)
+                    active_warning = f"LEFT: {pid_info[pid]['name'].upper()}"
+                    warning_time   = time.time()
+
+        # ──────────────────────────────────────────
+        # NON-PERSON OBJECT TRACKING
+        # ──────────────────────────────────────────
+
         if baseline_saved:
             now = time.time()
 
-            for obj, conf_count in list(confirmed_counts.items()):
-                cur_count = current_counter.get(obj, 0)
-                if cur_count < conf_count:
-                    if obj not in object_missing_since:
-                        object_missing_since[obj] = now
-                    if now - object_missing_since[obj] >= CONFIRMATION_TIME:
-                        removed_n = conf_count - cur_count
-                        confirmed_counts[obj] = cur_count
-                        if cur_count == 0:
+            for obj, conf_c in list(confirmed_counts.items()):
+                cur_c = current_counter.get(obj, 0)
+                if cur_c < conf_c:
+                    if obj not in obj_missing_since:
+                        obj_missing_since[obj] = now
+                    if now - obj_missing_since[obj] >= 1.5:
+                        removed_n = conf_c - cur_c
+                        confirmed_counts[obj] = cur_c
+                        if cur_c == 0:
                             del confirmed_counts[obj]
-                        del object_missing_since[obj]
+                        del obj_missing_since[obj]
                         lbl = f"{obj} x{removed_n}" if removed_n > 1 else obj
                         log_event("OBJ REMOVED", "—", lbl,
-                                  f"{conf_count} → {cur_count}")
+                                  f"{conf_c} → {cur_c}")
                         cv2.imwrite(AFTER_IMG, frame)
-                        threading.Thread(target=play_alarm, daemon=True).start()
+                        threading.Thread(target=play_alarm,
+                                         daemon=True).start()
                         async_alert(
-                            f"⚠️ OBJECT REMOVED\n\nObject: {lbl}\n"
-                            f"Was: {conf_count} → Now: {cur_count}\n"
-                            f"Time: {datetime.now().strftime('%H:%M:%S')}"
-                        )
+                            f"⚠️ OBJECT REMOVED\nObject: {lbl}\n"
+                            f"Was: {conf_c} → Now: {cur_c}\n"
+                            f"Time: {datetime.now().strftime('%H:%M:%S')}")
                         active_warning = f"REMOVED: {lbl.upper()}"
                         warning_time   = now
                 else:
-                    object_missing_since.pop(obj, None)
+                    obj_missing_since.pop(obj, None)
 
-            for obj, cur_count in current_counter.items():
-                conf_count = confirmed_counts.get(obj, 0)
-                if cur_count > conf_count:
-                    if obj not in object_added_since:
-                        object_added_since[obj] = now
-                    if now - object_added_since[obj] >= CONFIRMATION_TIME:
-                        added_n = cur_count - conf_count
-                        confirmed_counts[obj] = cur_count
-                        del object_added_since[obj]
-                        lbl = f"{obj} x{cur_count}" if added_n > 1 or conf_count > 0 else obj
+            for obj, cur_c in current_counter.items():
+                conf_c = confirmed_counts.get(obj, 0)
+                if cur_c > conf_c:
+                    if obj not in obj_added_since:
+                        obj_added_since[obj] = now
+                    if now - obj_added_since[obj] >= 1.5:
+                        added_n = cur_c - conf_c
+                        confirmed_counts[obj] = cur_c
+                        del obj_added_since[obj]
+                        lbl = f"{obj} x{cur_c}" if added_n > 1 or conf_c > 0 else obj
                         log_event("OBJ ADDED", "—", lbl,
-                                  f"{conf_count} → {cur_count}")
+                                  f"{conf_c} → {cur_c}")
                         async_alert(
-                            f"🟢 OBJECT ADDED\n\nObject: {lbl}\n"
-                            f"Was: {conf_count} → Now: {cur_count}\n"
-                            f"Time: {datetime.now().strftime('%H:%M:%S')}"
-                        )
+                            f"🟢 OBJECT ADDED\nObject: {lbl}\n"
+                            f"Was: {conf_c} → Now: {cur_c}\n"
+                            f"Time: {datetime.now().strftime('%H:%M:%S')}")
                         active_warning = f"ADDED: {lbl.upper()}"
                         warning_time   = now
                 else:
-                    object_added_since.pop(obj, None)
+                    obj_added_since.pop(obj, None)
 
-    # ─────────────────────────────────────────────
-    # DRAW BOUNDING BOXES
-    # ─────────────────────────────────────────────
+    # =================================================
+    # DRAW
+    # =================================================
 
     if show_boxes:
         for d in latest_detections:
             x1, y1, x2, y2 = d["box"]
             pid   = d.get("pid")
             color = pid_color(pid) if pid else CYAN
-
             cv2.rectangle(display, (x1, y1), (x2, y2), color, 3)
+            draw_label(display,
+                       f"{d['disp_name']}  {d['conf']:.2f}",
+                       x1, y1, color)
 
-            label_text = d["disp_name"]
-            conf_text  = f"{d['conf']:.2f}"
-            full_text  = f"{label_text}  {conf_text}"
+    H, W = display.shape[:2]
 
-            text_w = len(full_text) * 10
-            cv2.rectangle(display,
-                          (x1, y1 - 32), (x1 + text_w, y1),
-                          color, -1)
-            cv2.putText(display, full_text,
-                        (x1 + 6, y1 - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, BLACK, 2)
-
-    height, width = display.shape[:2]
-
-    # ─────────────────────────────────────────────
-    # TOP BAR
-    # ─────────────────────────────────────────────
-
-    transparent_rect(display, 0, 0, width, 58, BLACK, 0.88)
-
+    # ── Top bar ───────────────────────────────────
+    transparent_rect(display, 0, 0, W, 56, BLACK, 0.88)
     cv2.putText(display, "AI SMART SURVEILLANCE",
-                (18, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.9, CYAN, 2)
-
+                (16, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.88, CYAN, 2)
     cv2.putText(display,
                 f"Objects: {len(latest_detections)}  |  "
-                f"Persons: {len(currently_present)}  |  "
+                f"Persons: {len(present_pids)}  |  "
                 f"DB: {len(faces_db)} faces",
-                (360, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.6, GREEN, 1)
+                (360, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.58, GREEN, 1)
+    st_txt   = "READY" if baseline_saved else "SCANNING..."
+    st_color = GREEN   if baseline_saved else RED
+    cv2.putText(display, st_txt, (W - 140, 36),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, st_color, 2)
 
-    status_txt   = "READY" if baseline_saved else "SCANNING..."
-    status_color = GREEN   if baseline_saved else RED
-    cv2.putText(display, status_txt,
-                (width - 140, 38),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-
-    # ─────────────────────────────────────────────
-    # WARNING BANNER
-    # ─────────────────────────────────────────────
-
+    # ── Warning banner ────────────────────────────
     if time.time() - warning_time < 3:
-        bc = RED if "REMOVED" in active_warning else GREEN
-        cv2.rectangle(display,
-                      (width // 2 - 290, 62),
-                      (width // 2 + 290, 112), bc, -1)
+        bc = RED if "REMOVED" in active_warning or "LEFT" in active_warning else GREEN
+        cv2.rectangle(display, (W//2-290, 60), (W//2+290, 108), bc, -1)
         cv2.putText(display, active_warning,
-                    (width // 2 - 270, 100),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.95, WHITE, 3)
+                    (W//2-270, 96),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, WHITE, 3)
 
-    # ─────────────────────────────────────────────
-    # LEFT PANEL — Live Objects + Present Persons
-    # ─────────────────────────────────────────────
-
+    # ── Left panel ────────────────────────────────
     if show_left_panel:
-        transparent_rect(display, 0, 58, 230, height, DARK, 0.78)
-
+        transparent_rect(display, 0, 56, 240, H, DARK, 0.78)
         cv2.putText(display, "LIVE OBJECTS",
-                    (12, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.72, CYAN, 2)
-        y = 130
-        for obj, count in object_counts.items():
-            cv2.putText(display, f"  {obj}: {count}",
-                        (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, WHITE, 1)
-            y += 36
-
+                    (12, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.7, CYAN, 2)
+        y = 124
+        for obj, cnt in object_counts.items():
+            cv2.putText(display, f"  {obj}: {cnt}",
+                        (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.58, WHITE, 1)
+            y += 34
         y += 10
         cv2.putText(display, "PRESENT PERSONS",
                     (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.62, ORANGE, 2)
-        y += 30
-        for pid, data in currently_present.items():
+        y += 28
+        for pid in present_pids:
+            name  = pid_info[pid]["name"]
             color = pid_color(pid)
-            cv2.putText(display, f"  {pid}: {data['name'][:14]}",
+            cv2.putText(display, f"  {pid}: {name[:16]}",
                         (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
             y += 28
 
-    # ─────────────────────────────────────────────
-    # RIGHT PANEL — Event Log
-    # ─────────────────────────────────────────────
-
+    # ── Right panel ───────────────────────────────
     if show_right_panel:
-        transparent_rect(display, width - 360, 58, width, height, DARK, 0.78)
-
+        transparent_rect(display, W-370, 56, W, H, DARK, 0.78)
         cv2.putText(display, "EVENTS",
-                    (width - 340, 96),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.72, CYAN, 2)
-        y = 130
-        for event in reversed(history_log[-18:]):
-            if "REMOVED" in event or "LEFT" in event:
+                    (W-350, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.7, CYAN, 2)
+        y = 124
+        for ev in reversed(history_log[-20:]):
+            if "REMOVED" in ev or "LEFT" in ev:
                 ec = RED
-            elif "ADDED" in event or "ENTERED" in event or "RETURNED" in event:
+            elif "ENTERED" in ev or "RETURNED" in ev or "ADDED" in ev:
                 ec = GREEN
             else:
                 ec = WHITE
-            cv2.putText(display, event[:54],
-                        (width - 350, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, ec, 1)
-            y += 26
+            cv2.putText(display, ev[:56],
+                        (W-360, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.37, ec, 1)
+            y += 25
 
-    # ─────────────────────────────────────────────
-    # FOOTER
-    # ─────────────────────────────────────────────
-
+    # ── Footer ────────────────────────────────────
     if show_footer:
-        transparent_rect(display, 0, height - 44, width, height, BLACK, 0.88)
+        transparent_rect(display, 0, H-42, W, H, BLACK, 0.88)
         cv2.putText(display,
                     "L:Left Panel  R:Events  D:Boxes  B:Footer  S:Evidence  Q:Quit",
-                    (18, height - 14),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, WHITE, 1)
-
-    # ─────────────────────────────────────────────
-    # SHOW
-    # ─────────────────────────────────────────────
+                    (16, H-14), cv2.FONT_HERSHEY_SIMPLEX, 0.52, WHITE, 1)
 
     cv2.imshow("AI SURVEILLANCE", display)
 
-    # ─────────────────────────────────────────────
-    # KEY HANDLERS
-    # ─────────────────────────────────────────────
-
     key = cv2.waitKey(1) & 0xFF
-
-    if key == ord('q'):
-        break
-    elif key == ord('l'):
-        show_left_panel  = not show_left_panel
-    elif key == ord('r'):
-        show_right_panel = not show_right_panel
-    elif key == ord('d'):
-        show_boxes       = not show_boxes
-    elif key == ord('b'):
-        show_footer      = not show_footer
+    if   key == ord('q'): break
+    elif key == ord('l'): show_left_panel  = not show_left_panel
+    elif key == ord('r'): show_right_panel = not show_right_panel
+    elif key == ord('d'): show_boxes       = not show_boxes
+    elif key == ord('b'): show_footer      = not show_footer
     elif key == ord('s'):
-        log_event("EVIDENCE", "—", "—", "Manual evidence snapshot sent")
+        log_event("EVIDENCE", "—", "—", "Manual snapshot sent")
         async_alert("📸 SENDING EVIDENCE")
-        if os.path.exists(BEFORE_IMG):
-            async_photo(BEFORE_IMG, "📷 BEFORE")
-        if os.path.exists(AFTER_IMG):
-            async_photo(AFTER_IMG, "📷 AFTER")
+        if os.path.exists(BEFORE_IMG): async_photo(BEFORE_IMG, "📷 BEFORE")
+        if os.path.exists(AFTER_IMG):  async_photo(AFTER_IMG,  "📷 AFTER")
 
 # =====================================================
 # CLEANUP
 # =====================================================
 
 save_faces_db(faces_db)
-log_event("SYSTEM STOP", "—", "—", "Surveillance session ended")
-
-# Write closing divider to event log
+log_event("SYSTEM STOP", "—", "—", "Session ended")
 with open(EVENT_LOG_FILE, "a", encoding="utf-8") as f:
-    f.write(_table_divider() + "\n\n")
+    f.write(_div() + "\n\n")
     f.write(f"Session ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
 cap.release()
