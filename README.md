@@ -196,3 +196,421 @@ python OD.py
 
 # Optional EXE build
 pyinstaller --onefile --windowed OD.py
+
+# HOW TO USE
+
+1. Run the project:
+
+python OD.py
+
+------------------------------------------------------------
+
+2. Wait for baseline initialization.
+
+The system will automatically:
+- start the camera
+- load YOLO model
+- initialize surveillance
+- save the baseline scene
+
+You will receive:
+
+✅ SURVEILLANCE ACTIVE
+
+on Telegram once monitoring begins.
+
+------------------------------------------------------------
+
+3. Object Monitoring
+
+The system continuously monitors:
+- objects entering the scene
+- objects removed from the scene
+- people appearing/disappearing
+- known and unknown faces
+
+------------------------------------------------------------
+
+4. Face Recognition
+
+To register known faces:
+
+Place face images inside:
+
+faces/known/
+
+Example:
+
+faces/known/Alice.jpg
+faces/known/Bob.jpg
+
+The system automatically:
+- loads known faces
+- assigns stable IDs
+- recognizes returning persons
+
+Unknown people are automatically stored as:
+
+Intruder-P1
+Intruder-P2
+etc.
+
+------------------------------------------------------------
+
+5. Telegram Alerts
+
+The system sends realtime Telegram notifications for:
+- new person detected
+- person returned
+- person left
+- object added
+- object removed
+- evidence screenshots
+- surveillance status updates
+
+------------------------------------------------------------
+
+6. Evidence Screenshots
+
+The system stores:
+- baseline image
+- after-event image
+
+Manual evidence can be sent using keyboard controls.
+
+------------------------------------------------------------
+
+7. Controls
+
+L → Toggle left information panel
+
+R → Toggle events panel
+
+D → Toggle detection boxes
+
+B → Toggle footer
+
+S → Send evidence screenshots to Telegram
+
+Q → Quit application
+
+------------------------------------------------------------
+
+8. Logs
+
+All events are automatically stored inside:
+
+logs/
+
+Generated logs:
+- surveillance_log.txt
+- events_table.txt
+- faces_db.json
+
+------------------------------------------------------------
+
+9. Captured Faces
+
+Detected faces are stored inside:
+
+faces/captured/
+
+Known faces are stored inside:
+
+faces/known/
+
+------------------------------------------------------------
+
+10. Performance Notes
+
+For better performance:
+- use NVIDIA GPU if available
+- close unnecessary background apps
+- ensure good lighting conditions
+- use stable camera positioning
+
+------------------------------------------------------------
+
+11. Detection Notes
+
+The system performs best when:
+- objects are clearly visible
+- camera remains stable
+- lighting is consistent
+- objects are not heavily occluded
+
+------------------------------------------------------------
+
+12. Stopping the System
+
+Press:
+
+Q
+
+to safely close the surveillance system.
+
+# AI SMART SURVEILLANCE SYSTEM
+
+An advanced realtime AI-powered surveillance and monitoring system built using YOLOv8, OpenCV, Face Recognition, and Telegram integration.
+
+------------------------------------------------------------
+
+# WHAT THIS SYSTEM DOES
+
+## Realtime Object Detection
+Detects multiple realtime objects through webcam/video feed using YOLOv8.
+
+Examples:
+- person
+- bottle
+- laptop
+- chair
+- phone
+- backpack
+- monitor
+- keyboard
+- and many more
+
+------------------------------------------------------------
+
+## Realtime Object Monitoring
+Continuously monitors the environment and detects:
+- objects entering the scene
+- objects removed from the scene
+- sudden environment changes
+
+------------------------------------------------------------
+
+## Object Added Alerts
+Whenever a new object appears:
+- warning banner appears on screen
+- Telegram notification is sent
+- event gets logged
+
+------------------------------------------------------------
+
+## Object Removed Alerts
+Whenever an object disappears:
+- warning banner appears
+- removal alert is sent
+- evidence image is captured
+- event is added to history panel
+
+------------------------------------------------------------
+
+## Face Recognition System
+Supports known and unknown face detection.
+
+Known faces:
+- automatically recognized
+- assigned names
+- tracked when returning
+
+Unknown faces:
+- automatically registered
+- assigned unique IDs
+- stored for future monitoring
+
+------------------------------------------------------------
+
+## Intruder Detection
+Unknown people entering the monitored area are automatically identified and logged.
+
+------------------------------------------------------------
+
+## Telegram Integration
+Realtime Telegram alerts for:
+- object added
+- object removed
+- intruder detected
+- person returned
+- evidence screenshots
+- surveillance startup status
+
+------------------------------------------------------------
+
+## Evidence Screenshot System
+Captures:
+- baseline scene
+- event screenshots
+- after-removal evidence
+
+Can also manually send screenshots directly to Telegram.
+
+------------------------------------------------------------
+
+## Event History Panel
+Displays live events such as:
+- object added
+- object removed
+- face detected
+- evidence sent
+- surveillance events
+
+------------------------------------------------------------
+
+## Warning Banner System
+Displays large realtime warning messages directly on screen whenever important events occur.
+
+------------------------------------------------------------
+
+## Fullscreen Surveillance UI
+Custom futuristic surveillance interface with:
+- realtime detection boxes
+- object counters
+- live event logs
+- overlays
+- fullscreen monitoring mode
+
+------------------------------------------------------------
+
+## Optimized Realtime Performance
+Performance optimized using:
+- frame skipping
+- lightweight YOLO model
+- threaded Telegram requests
+- reduced processing resolution
+
+------------------------------------------------------------
+
+# HOW TO USE
+
+## 1. Run The Project
+
+Run:
+
+python OD.py
+
+------------------------------------------------------------
+
+## 2. System Startup
+
+The system automatically:
+- opens webcam
+- loads YOLO model
+- initializes face recognition
+- starts surveillance engine
+- saves baseline scene
+
+Telegram receives:
+
+✅ SURVEILLANCE ACTIVE
+
+------------------------------------------------------------
+
+## 3. Object Monitoring
+
+The system continuously checks:
+- what objects are visible
+- what disappeared
+- what newly appeared
+
+------------------------------------------------------------
+
+## 4. Face Registration
+
+Place known face images inside:
+
+faces/known/
+
+Example:
+
+faces/known/Alice.jpg
+faces/known/Bob.jpg
+
+The system automatically loads them during startup.
+
+------------------------------------------------------------
+
+## 5. Unknown Face Handling
+
+Unknown people are automatically:
+- detected
+- assigned IDs
+- stored inside:
+
+faces/captured/
+
+------------------------------------------------------------
+
+## 6. Telegram Notifications
+
+You receive alerts for:
+- object added
+- object removed
+- unknown person detected
+- known person returned
+- evidence screenshots
+
+------------------------------------------------------------
+
+## 7. Evidence Screenshots
+
+Press:
+
+S
+
+to manually send:
+- baseline image
+- latest evidence image
+
+to Telegram.
+
+------------------------------------------------------------
+
+## 8. Controls
+
+L → Toggle left information panel
+
+R → Toggle events panel
+
+D → Toggle detection boxes
+
+B → Toggle footer
+
+S → Send evidence screenshots
+
+Q → Quit application
+
+------------------------------------------------------------
+
+## 9. Logs
+
+All events are stored automatically inside:
+
+logs/
+
+Examples:
+- surveillance_log.txt
+- event_history.txt
+- face_database.json
+
+------------------------------------------------------------
+
+## 10. Performance Tips
+
+For best performance:
+- use NVIDIA GPU if available
+- maintain stable lighting
+- avoid shaky camera movement
+- close unnecessary applications
+
+------------------------------------------------------------
+
+## 11. Recommended Hardware
+
+Recommended:
+- 8GB+ RAM
+- NVIDIA GPU
+- modern CPU
+- HD webcam
+
+------------------------------------------------------------
+
+## 12. Closing The System
+
+Press:
+
+Q
+
+to safely terminate the surveillance system.
