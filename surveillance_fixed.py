@@ -41,7 +41,7 @@ AFTER_IMG      = "logs/after.jpg"
 # TELEGRAM SETTINGS
 # =====================================================
 
-BOT_TOKEN = "8938780809:AAHzpgv_fbfbmXJ9x_ui44LY83CWnTWfKPo"
+BOT_TOKEN = "Bot_Tokem"
 CHAT_ID   = "8076971661"
 
 # =====================================================
