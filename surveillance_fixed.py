@@ -4,32 +4,6 @@
 # ║  Queue-based notifications · Structured logging · Cyberpunk UI             ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 #
-# WHAT WAS BROKEN AND WHY:
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. TELEGRAM:  async_alert() fired from on_person_arrived() but that function
-#    checked `if "Intruder" not in name: return` early — known people silently
-#    skipped.  Also direct threading.Thread per alert caused race conditions and
-#    no retry on network failure.  Fixed: dedicated NotificationQueue with
-#    per-event cooldown table, retry-with-backoff, and ALL events reach the queue.
-#
-# 2. LOGS:  _build_col_widths() added one column per camera, so a 3-camera run
-#    created a different schema than a 2-camera run — unreadable / corrupt on
-#    re-open.  Fixed: flat fixed schema (timestamp|event|camera|person|object|detail)
-#    written to both TXT (human-readable) and JSONL (machine-readable) with
-#    Python's RotatingFileHandler.  CSV export function included.
-#
-# 3. UI LAG:  Every frame rebuilt ALL panels from scratch with many
-#    cv2.putText / transparent_rect calls — hundreds of numpy operations/frame.
-#    Fixed: dirty-flag per panel, pre-rendered static panel layers, single
-#    canvas.copy() per frame, fast np.copyto() for tile placement.
-#    FPS target enforced with adaptive sleep.
-#
-# 4. PERFORMANCE:  YOLO half=True already good, but frame queues were blocking.
-#    Fixed: maxsize=1 drop-queues (always-fresh-frame), daemon threads, shared
-#    YOLO instances protected by per-camera locks, face executor tuned, GC hints.
-#
-# 5. CAMERA:  Reconnect logic was sequential (blocked main thread).
-#    Fixed: per-camera watchdog thread with exponential back-off reconnect.
 # ─────────────────────────────────────────────────────────────────────────────
 
 from __future__ import annotations
