@@ -1,616 +1,525 @@
-# ODM-asi-camera-app
-# AI SMART SURVEILLANCE SYSTEM
-
-An advanced realtime AI-powered surveillance and inventory monitoring system built using YOLOv8, OpenCV, and Telegram integration.
-
-------------------------------------------------------------
-
-# PROJECT HIGHLIGHTS
-
-## Realtime AI Object Detection
-Implemented YOLOv8-based object detection capable of identifying multiple real-world objects in realtime through webcam/video input.
-
-## Intelligent Object Monitoring
-Built a dynamic monitoring engine that continuously tracks objects appearing and disappearing from the scene.
-
-## Object Added Detection
-Designed logic to detect when new objects enter the monitored environment and instantly trigger alerts.
-
-## Object Removed Detection
-Implemented realtime object removal monitoring to identify missing objects from the scene and notify the user immediately.
-
-## Telegram Alert Integration
-Integrated Telegram Bot API for instant remote notifications including:
-- object added alerts
-- object removed alerts
-- evidence messages
-- surveillance status updates
-
-## Evidence Screenshot System
-Created an automated screenshot capture system capable of storing:
-- baseline scene image
-- after-removal evidence image
-
-Also added manual evidence sending controls.
-
-## Interactive Surveillance UI
-Developed a fullscreen futuristic surveillance interface using OpenCV with:
-- live detection boxes
-- realtime object counters
-- event history panel
-- warning banners
-- control overlays
-
-## Event Logging System
-Implemented a realtime events panel that records:
-- added objects
-- removed objects
-- evidence sending
-- surveillance status changes
-
-## Realtime Warning Banner
-Created on-screen warning banners for immediate visual feedback whenever an object is added or removed.
-
-## Lightweight Performance Optimization
-Optimized the system for smoother realtime performance using:
-- reduced processing resolution
-- frame skipping
-- threaded Telegram requests
-- lightweight YOLO model
-
-## Modular System Design
-Structured the application into modular components including:
-- detection engine
-- event engine
-- UI renderer
-- Telegram service
-- evidence manager
-
-------------------------------------------------------------
-
-# MAJOR TECHNICAL CHALLENGES FACED
-
-## YOLO Detection Flickering
-One of the biggest difficulties was handling unstable detections where objects would randomly disappear for a frame and reappear.
-
-This caused:
-- false alerts
-- repeated notifications
-- unstable tracking behavior
-
-Solved using:
-- confirmation timers
-- debounce logic
-- stable state management
-
-------------------------------------------------------------
-
-## Object Tracking Stability
-Tracking realtime object additions/removals was difficult because YOLO detections constantly fluctuate due to:
-- lighting changes
-- object angle
-- occlusion
-- confidence variations
-
-A custom event engine had to be developed to stabilize detection behavior.
-
-------------------------------------------------------------
-
-## Notification Spam Control
-Early versions generated excessive Telegram alerts every frame.
-
-Implemented:
-- event confirmation timing
-- alert state memory
-- controlled notification triggering
-
-to eliminate spam while keeping alerts responsive.
-
-------------------------------------------------------------
-
-## Multithreading Issues
-Telegram requests initially caused UI lag and freezing because network calls blocked the main camera loop.
-
-Solved by implementing:
-- asynchronous threaded alerts
-- threaded photo sending
-- non-blocking event handling
-
-------------------------------------------------------------
-
-## Realtime UI Rendering
-Rendering realtime detections, overlays, event logs, and warning banners smoothly while maintaining FPS required extensive optimization.
-
-------------------------------------------------------------
-
-## Detection State Management
-Handling repeated object additions/removals correctly was difficult because:
-- counts constantly changed
-- objects flickered
-- states got stuck
-
-Required building:
-- persistent object state logic
-- confirmation timers
-- reset mechanisms
-- dynamic count tracking
-
-------------------------------------------------------------
-
-## Evidence Capture Synchronization
-Capturing screenshots at the correct moment during object removal events required careful synchronization with the event engine.
-
-------------------------------------------------------------
-
-# TECHNOLOGIES USED
-
-- Python
-- YOLOv8
-- OpenCV
-- Ultralytics
-- Telegram Bot API
-- Multithreading
-
-------------------------------------------------------------
-
-# FINAL OUTCOME
-
-The final system successfully performs:
-- realtime AI surveillance
-- object monitoring
-- addition/removal detection
-- remote alerting
-- evidence generation
-- interactive monitoring UI
-
-with stable realtime performance and automated notification handling.
-
-INSTALLATIONS
-
-# TERMINAL INSTALLATION COMMANDS
-
-# Create virtual environment
-python -m venv venv
-
-# Activate venv (Windows CMD)
-venv\Scripts\activate
-
-# Activate venv (PowerShell)
-.\venv\Scripts\Activate.ps1
-
-# Install required packages
-pip install ultralytics
-pip install opencv-python
-pip install requests
-pip install face-recognition
-pip install numpy
-
-# Install PyTorch
-pip install torch torchvision torchaudio
-
-# Optional EXE builder
-pip install pyinstaller
-
-# Run the project
-python OD.py
-
-# Optional EXE build
-pyinstaller --onefile --windowed OD.py
-
-# HOW TO USE
-
-1. Run the project:
-
-python OD.py
-
-------------------------------------------------------------
-
-2. Wait for baseline initialization.
-
-The system will automatically:
-- start the camera
-- load YOLO model
-- initialize surveillance
-- save the baseline scene
-
-You will receive:
-
-✅ SURVEILLANCE ACTIVE
-
-on Telegram once monitoring begins.
-
-------------------------------------------------------------
-
-3. Object Monitoring
-
-The system continuously monitors:
-- objects entering the scene
-- objects removed from the scene
-- people appearing/disappearing
-- known and unknown faces
-
-------------------------------------------------------------
-
-4. Face Recognition
-
-To register known faces:
-
-Place face images inside:
-
-faces/known/
+# 🚨 AI Smart Surveillance System v4.0
+
+A futuristic real-time AI surveillance platform powered by:
+
+- 🧠 YOLOv8 Object Detection
+- 👤 Face Recognition
+- 📷 Multi-Camera Monitoring
+- ⚡ RTX GPU Acceleration
+- 📲 Telegram Alerts
+- 🧵 Async Processing
+- 🌌 Cyberpunk UI
+- 📊 Structured Logging
+- 🔥 Ultra Smooth Real-Time Rendering
+
+Designed for:
+- Home surveillance
+- Office security
+- AI monitoring systems
+- Research projects
+- Smart security automation
+
+---
+
+# ✨ Features
+
+## 🎯 AI Detection
+- Real-time YOLOv8 object detection
+- Person tracking
+- Intruder detection
+- Face recognition
+- Multi-object monitoring
+
+---
+
+## 📲 Telegram Notifications
+
+Beautiful real-time alerts with emojis.
 
 Example:
 
-faces/known/Alice.jpg
-faces/known/Bob.jpg
+🚨 INTRUDER DETECTED  
+📷 Camera: Laptop Cam  
+👤 Unknown Person  
+🎯 Confidence: 94%  
+⏰ 11:39 PM
 
-The system automatically:
-- loads known faces
-- assigns stable IDs
-- recognizes returning persons
+Supports:
+- Image alerts
+- Event alerts
+- Object alerts
+- Person entry/exit alerts
 
-Unknown people are automatically stored as:
+---
 
-Intruder-P1
-Intruder-P2
-etc.
+## 📷 Multi Camera Support
 
-------------------------------------------------------------
+Supports:
+- Laptop camera
+- USB cameras
+- IP cameras
+- DroidCam
+- RTSP streams
+- Android IP Webcam
 
-5. Telegram Alerts
+---
 
-The system sends realtime Telegram notifications for:
-- new person detected
-- person returned
-- person left
-- object added
-- object removed
-- evidence screenshots
-- surveillance status updates
+## ⚡ High Performance
 
-------------------------------------------------------------
+Optimized for:
+- RTX GPUs
+- CUDA acceleration
+- Multi-threading
+- Async queues
+- Low latency rendering
 
-6. Evidence Screenshots
+Features:
+- Smooth UI
+- Adaptive rendering
+- Frame skipping
+- Non-blocking notifications
+- Fast reconnect system
 
-The system stores:
-- baseline image
-- after-event image
+---
 
-Manual evidence can be sent using keyboard controls.
+## 🌌 Modern Cyberpunk UI
 
-------------------------------------------------------------
+Includes:
+- AI dashboard
+- Live event feed
+- Smooth overlays
+- Responsive camera grid
+- Camera health monitoring
+- FPS monitoring
+- Futuristic surveillance aesthetic
 
-7. Controls
+---
 
-L → Toggle left information panel
+# 📂 Project Structure
 
-R → Toggle events panel
+```text
+AI-Surveillance/
+│
+├── surveillance.py
+├── requirements.txt
+├── alarm.wav
+│
+├── logs/
+│   ├── app.log
+│   ├── errors.log
+│   ├── events.log
+│   ├── events.jsonl
+│   └── events_export.csv
+│
+├── faces/
+│   ├── known/
+│   ├── unknown/
+│   └── captured/
+│
+└── README.md
+```
 
-D → Toggle detection boxes
+---
 
-B → Toggle footer
+# 🖥️ Installation Guide
 
-S → Send evidence screenshots to Telegram
+# 🐧 Linux Installation (Arch / Ubuntu)
 
-Q → Quit application
+## 1️⃣ Install Python
 
-------------------------------------------------------------
+### Arch Linux
 
-8. Logs
+```bash
+sudo pacman -S python python-pip
+```
 
-All events are automatically stored inside:
+### Ubuntu
 
-logs/
+```bash
+sudo apt update
+sudo apt install python3 python3-pip -y
+```
+
+---
+
+## 2️⃣ Create Virtual Environment
+
+```bash
+python -m venv .venv
+```
+
+Activate:
+
+### Linux
+
+```bash
+source .venv/bin/activate
+```
+
+---
+
+## 3️⃣ Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+OR manually:
+
+```bash
+pip install ultralytics opencv-python face_recognition numpy requests psutil
+```
+
+---
+
+## 4️⃣ Install CUDA (Optional but Recommended)
+
+For RTX GPU acceleration install:
+- NVIDIA drivers
+- CUDA Toolkit
+- cuDNN
+
+Verify CUDA:
+
+```bash
+nvidia-smi
+```
+
+---
+
+## 5️⃣ Run the System
+
+```bash
+python surveillance.py
+```
+
+---
+
+# 🪟 Windows Installation Guide
+
+## 1️⃣ Install Python
+
+Download:
+https://www.python.org/downloads/windows/
+
+IMPORTANT:
+During installation ENABLE:
+
+✅ Add Python to PATH
+
+---
+
+## 2️⃣ Install Visual Studio Build Tools
+
+Needed for `face_recognition` and `dlib`.
+
+Download:
+https://visualstudio.microsoft.com/visual-cpp-build-tools/
+
+During install select:
+- Desktop development with C++
+- MSVC compiler
+- Windows SDK
+
+---
+
+## 3️⃣ Install Git (Optional)
+
+https://git-scm.com/download/win
+
+---
+
+## 4️⃣ Open CMD or PowerShell
+
+Navigate to project:
+
+```powershell
+cd Desktop\AI-Surveillance
+```
+
+---
+
+## 5️⃣ Create Virtual Environment
+
+```powershell
+python -m venv .venv
+```
+
+Activate:
+
+```powershell
+.venv\Scripts\activate
+```
+
+---
+
+## 6️⃣ Install Dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+OR:
+
+```powershell
+pip install ultralytics opencv-python face_recognition numpy requests psutil
+```
+
+---
+
+## 7️⃣ Install PyTorch CUDA (RTX GPU)
+
+Visit:
+https://pytorch.org/get-started/locally/
+
+Example:
+
+```powershell
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
+
+---
+
+## 8️⃣ Run the Program
+
+```powershell
+python surveillance.py
+```
+
+---
+
+# 📲 Telegram Bot Setup
+
+## 1️⃣ Create Bot
+
+Open Telegram:
+https://t.me/BotFather
+
+Command:
+
+```text
+/newbot
+```
+
+Copy:
+- Bot Token
+
+---
+
+## 2️⃣ Get Chat ID
+
+Send a message to your bot.
+
+Open:
+
+```text
+https://api.telegram.org/botYOUR_BOT_TOKEN/getUpdates
+```
+
+Copy:
+- chat ID
+
+---
+
+## 3️⃣ Add To Config
+
+Inside code:
+
+```python
+BOT_TOKEN = "YOUR_TOKEN"
+CHAT_ID   = "YOUR_CHAT_ID"
+```
+
+---
+
+# 📷 IP Camera Setup
+
+## Android Phone Camera
+
+Install:
+
+### IP Webcam
+https://play.google.com/store/apps/details?id=com.pas.webcam
+
+OR
+
+### DroidCam
+https://www.dev47apps.com/
+
+Use URL:
+
+```python
+"http://192.168.x.x:8080/video"
+```
+
+Example:
+
+```python
+CAMERA_CONFIGS = [
+    {"source": 0, "name": "Laptop Cam", "enabled": True},
+    {"source": "http://192.168.1.100:8080/video", "name": "Phone Cam", "enabled": True},
+]
+```
+
+---
+
+# ⌨️ Controls
+
+| Key | Action |
+|---|---|
+| G | Grid View |
+| F | Focus Mode |
+| TAB | Switch Camera |
+| 1-9 | Select Camera |
+| L | Toggle Left Panel |
+| R | Toggle Event Panel |
+| B | Toggle Footer |
+| S | Send Evidence |
+| X | Export CSV Logs |
+| Q | Quit |
+
+---
+
+# 📊 Logging System
 
 Generated logs:
-- surveillance_log.txt
-- events_table.txt
-- faces_db.json
 
-------------------------------------------------------------
+| File | Purpose |
+|---|---|
+| app.log | General logs |
+| errors.log | Error logs |
+| events.log | Human readable events |
+| events.jsonl | Structured JSON logs |
+| events_export.csv | CSV export |
 
-9. Captured Faces
+---
 
-Detected faces are stored inside:
+# 🧠 Face Recognition
 
-faces/captured/
+Add known faces here:
 
-Known faces are stored inside:
-
+```text
 faces/known/
-
-------------------------------------------------------------
-
-10. Performance Notes
-
-For better performance:
-- use NVIDIA GPU if available
-- close unnecessary background apps
-- ensure good lighting conditions
-- use stable camera positioning
-
-------------------------------------------------------------
-
-11. Detection Notes
-
-The system performs best when:
-- objects are clearly visible
-- camera remains stable
-- lighting is consistent
-- objects are not heavily occluded
-
-------------------------------------------------------------
-
-12. Stopping the System
-
-Press:
-
-Q
-
-to safely close the surveillance system.
-
-# AI SMART SURVEILLANCE SYSTEM
-
-An advanced realtime AI-powered surveillance and monitoring system built using YOLOv8, OpenCV, Face Recognition, and Telegram integration.
-
-------------------------------------------------------------
-
-# WHAT THIS SYSTEM DOES
-
-## Realtime Object Detection
-Detects multiple realtime objects through webcam/video feed using YOLOv8.
-
-Examples:
-- person
-- bottle
-- laptop
-- chair
-- phone
-- backpack
-- monitor
-- keyboard
-- and many more
-
-------------------------------------------------------------
-
-## Realtime Object Monitoring
-Continuously monitors the environment and detects:
-- objects entering the scene
-- objects removed from the scene
-- sudden environment changes
-
-------------------------------------------------------------
-
-## Object Added Alerts
-Whenever a new object appears:
-- warning banner appears on screen
-- Telegram notification is sent
-- event gets logged
-
-------------------------------------------------------------
-
-## Object Removed Alerts
-Whenever an object disappears:
-- warning banner appears
-- removal alert is sent
-- evidence image is captured
-- event is added to history panel
-
-------------------------------------------------------------
-
-## Face Recognition System
-Supports known and unknown face detection.
-
-Known faces:
-- automatically recognized
-- assigned names
-- tracked when returning
-
-Unknown faces:
-- automatically registered
-- assigned unique IDs
-- stored for future monitoring
-
-------------------------------------------------------------
-
-## Intruder Detection
-Unknown people entering the monitored area are automatically identified and logged.
-
-------------------------------------------------------------
-
-## Telegram Integration
-Realtime Telegram alerts for:
-- object added
-- object removed
-- intruder detected
-- person returned
-- evidence screenshots
-- surveillance startup status
-
-------------------------------------------------------------
-
-## Evidence Screenshot System
-Captures:
-- baseline scene
-- event screenshots
-- after-removal evidence
-
-Can also manually send screenshots directly to Telegram.
-
-------------------------------------------------------------
-
-## Event History Panel
-Displays live events such as:
-- object added
-- object removed
-- face detected
-- evidence sent
-- surveillance events
-
-------------------------------------------------------------
-
-## Warning Banner System
-Displays large realtime warning messages directly on screen whenever important events occur.
-
-------------------------------------------------------------
-
-## Fullscreen Surveillance UI
-Custom futuristic surveillance interface with:
-- realtime detection boxes
-- object counters
-- live event logs
-- overlays
-- fullscreen monitoring mode
-
-------------------------------------------------------------
-
-## Optimized Realtime Performance
-Performance optimized using:
-- frame skipping
-- lightweight YOLO model
-- threaded Telegram requests
-- reduced processing resolution
-
-------------------------------------------------------------
-
-# HOW TO USE
-
-## 1. Run The Project
-
-Run:
-
-python OD.py
-
-------------------------------------------------------------
-
-## 2. System Startup
-
-The system automatically:
-- opens webcam
-- loads YOLO model
-- initializes face recognition
-- starts surveillance engine
-- saves baseline scene
-
-Telegram receives:
-
-✅ SURVEILLANCE ACTIVE
-
-------------------------------------------------------------
-
-## 3. Object Monitoring
-
-The system continuously checks:
-- what objects are visible
-- what disappeared
-- what newly appeared
-
-------------------------------------------------------------
-
-## 4. Face Registration
-
-Place known face images inside:
-
-faces/known/
+```
 
 Example:
 
-faces/known/Alice.jpg
-faces/known/Bob.jpg
+```text
+faces/known/Prajan.jpg
+```
 
-The system automatically loads them during startup.
+---
 
-------------------------------------------------------------
+# ⚡ Performance Tips
 
-## 5. Unknown Face Handling
+## Best Settings For RTX GPUs
 
-Unknown people are automatically:
-- detected
-- assigned IDs
-- stored inside:
+```python
+MODEL_NAME = "yolov8n.pt"
+DEVICE = "cuda"
+PROCESS_EVERY_N = 3
+```
 
-faces/captured/
+---
 
-------------------------------------------------------------
+## For Ultra Smooth FPS
 
-## 6. Telegram Notifications
+Reduce resolution:
 
-You receive alerts for:
-- object added
-- object removed
-- unknown person detected
-- known person returned
-- evidence screenshots
+```python
+FRAME_W = 640
+FRAME_H = 360
+```
 
-------------------------------------------------------------
+---
 
-## 7. Evidence Screenshots
+# 🛠 Troubleshooting
 
-Press:
+## Camera Not Working
 
-S
+Linux:
 
-to manually send:
-- baseline image
-- latest evidence image
+```bash
+v4l2-ctl --list-devices
+```
 
-to Telegram.
+Windows:
+- Check Camera permissions
+- Close apps using webcam
 
-------------------------------------------------------------
+---
 
-## 8. Controls
+## Telegram Not Sending
 
-L → Toggle left information panel
+Check:
+- Bot token
+- Chat ID
+- Internet connection
 
-R → Toggle events panel
+Test:
 
-D → Toggle detection boxes
+```python
+requests.get("https://api.telegram.org/botTOKEN/getMe")
+```
 
-B → Toggle footer
+---
 
-S → Send evidence screenshots
+## CUDA Not Working
 
-Q → Quit application
+Check:
 
-------------------------------------------------------------
+```bash
+nvidia-smi
+```
 
-## 9. Logs
+If CUDA unavailable:
+System falls back to CPU automatically.
 
-All events are stored automatically inside:
+---
 
-logs/
+# 🚀 Future Plans
 
-Examples:
-- surveillance_log.txt
-- event_history.txt
-- face_database.json
+- Web dashboard
+- Mobile app
+- Voice alerts
+- AI anomaly detection
+- Heatmaps
+- License plate recognition
+- Cloud storage
+- Remote control panel
 
-------------------------------------------------------------
+---
 
-## 10. Performance Tips
+# 👨‍💻 Author
 
-For best performance:
-- use NVIDIA GPU if available
-- maintain stable lighting
-- avoid shaky camera movement
-- close unnecessary applications
+Prajan  
+AI + Computer Vision + Surveillance Systems
 
-------------------------------------------------------------
+---
 
-## 11. Recommended Hardware
+# ⭐ GitHub Setup
 
-Recommended:
-- 8GB+ RAM
-- NVIDIA GPU
-- modern CPU
-- HD webcam
+## Create Repository
 
-------------------------------------------------------------
+https://github.com
 
-## 12. Closing The System
+---
 
-Press:
+## Push Project
 
-Q
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin YOUR_REPO_LINK
+git push -u origin main
+```
 
-to safely terminate the surveillance system.
+---
+
+# 📜 License
+
+MIT License
+
+Free to use and modify.
